@@ -74,6 +74,8 @@ public class FlipGameAllInOne extends Application {
     private static final Color SUCCESS_COLOR = Color.rgb(25, 135, 84);
     private static final Color WARNING_COLOR = Color.rgb(255, 193, 7);
     private static final Color DANGER_COLOR = Color.rgb(220, 53, 69);
+    private static final Color TIMEOUT_COLOR = Color.rgb(255, 140, 0); // Orange for timeout
+    private static final Color PARTIAL_COLOR = Color.rgb(255, 165, 0); // Orange for partial results
     private static final Color BORDER_COLOR = Color.rgb(222, 226, 230);
     private static final Color TEXT_COLOR = Color.rgb(33, 37, 41);
     
@@ -122,18 +124,40 @@ public class FlipGameAllInOne extends Application {
         int moveCount;
         int[][] pressMatrix;
         boolean solvable;
+        boolean timeout;
+        boolean partial; // Indicates if this is a partial solution
         String colorHex;
+        String statusMessage;
 
         SolverResult(String name, List<int[]> moves, long timeMs, String colorHex) {
+            this(name, moves, timeMs, colorHex, false, false);
+        }
+        
+        SolverResult(String name, List<int[]> moves, long timeMs, String colorHex, boolean timeout, boolean partial) {
             this.name = name;
             this.moves = moves != null ? moves : new ArrayList<>();
             this.timeMs = timeMs;
             this.moveCount = this.moves.size();
-            this.solvable = moves != null;
+            this.solvable = moves != null && !moves.isEmpty();
+            this.timeout = timeout;
+            this.partial = partial;
             this.colorHex = colorHex;
+            this.statusMessage = generateStatusMessage();
             pressMatrix = new int[BOARD_SIZE][BOARD_SIZE];
             for (int[] m : this.moves) {
                 pressMatrix[m[0]][m[1]] = 1;
+            }
+        }
+        
+        private String generateStatusMessage() {
+            if (timeout && partial) {
+                return "TIMEOUT - Showing partial solution (" + moveCount + " moves found)";
+            } else if (timeout) {
+                return "TIMEOUT - No solution found within time limit";
+            } else if (!solvable) {
+                return "UNSOLVABLE (" + timeMs + " ms)";
+            } else {
+                return "✓ Solved in " + timeMs + " ms • " + moveCount + " moves";
             }
         }
     }
@@ -176,6 +200,7 @@ public class FlipGameAllInOne extends Application {
     private GridPane graphGrid, divideGrid, backtrackGrid, dpGrid;
     private Button[][] graphTiles, divideTiles, backtrackTiles, dpTiles;
     private Label graphTimeLabel, divideTimeLabel, backtrackTimeLabel, dpTimeLabel;
+    private Label graphStatusLabel, divideStatusLabel, backtrackStatusLabel, dpStatusLabel;
 
     @Override
     public void start(Stage stage) {
@@ -240,6 +265,7 @@ public class FlipGameAllInOne extends Application {
                 "   - All algorithms run in parallel",
                 "   - Watch them solve step by step in real-time",
                 "   - Time and moves shown for each algorithm",
+                "   - If an algorithm times out, it shows the best partial solution found so far",
                 "• 'See Analysis' shows precomputed performance on 30 boards"
         };
         for (String rule : rules) {
@@ -454,18 +480,22 @@ public class FlipGameAllInOne extends Application {
         graphGrid = (GridPane) ((BorderPane) graphBox.getChildren().get(1)).getCenter();
         graphTiles = extractTilesFromGrid(graphGrid);
         graphTimeLabel = (Label) ((VBox) graphBox.getChildren().get(2)).getChildren().get(1);
+        graphStatusLabel = (Label) ((VBox) graphBox.getChildren().get(2)).getChildren().get(0);
 
         divideGrid = (GridPane) ((BorderPane) divideBox.getChildren().get(1)).getCenter();
         divideTiles = extractTilesFromGrid(divideGrid);
         divideTimeLabel = (Label) ((VBox) divideBox.getChildren().get(2)).getChildren().get(1);
+        divideStatusLabel = (Label) ((VBox) divideBox.getChildren().get(2)).getChildren().get(0);
 
         backtrackGrid = (GridPane) ((BorderPane) backtrackBox.getChildren().get(1)).getCenter();
         backtrackTiles = extractTilesFromGrid(backtrackGrid);
         backtrackTimeLabel = (Label) ((VBox) backtrackBox.getChildren().get(2)).getChildren().get(1);
+        backtrackStatusLabel = (Label) ((VBox) backtrackBox.getChildren().get(2)).getChildren().get(0);
 
         dpGrid = (GridPane) ((BorderPane) dpBox.getChildren().get(1)).getCenter();
         dpTiles = extractTilesFromGrid(dpGrid);
         dpTimeLabel = (Label) ((VBox) dpBox.getChildren().get(2)).getChildren().get(1);
+        dpStatusLabel = (Label) ((VBox) dpBox.getChildren().get(2)).getChildren().get(0);
 
         HBox buttonBox = new HBox(20);
         buttonBox.setAlignment(Pos.CENTER);
@@ -541,15 +571,18 @@ public class FlipGameAllInOne extends Application {
         }
         gridContainer.setCenter(grid);
 
-        VBox statsBox = new VBox(8);
+        VBox statsBox = new VBox(5);
         statsBox.setAlignment(Pos.CENTER);
+        
+        Label statusLabel = new Label("Waiting for result...");
+        statusLabel.setFont(Font.font("Arial", FontWeight.BOLD, 12));
+        statusLabel.setTextFill(SECONDARY_COLOR);
+        
         Label timeLabel = new Label("Time: -- ms");
         timeLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
         timeLabel.setTextFill(color);
-        Label movesLabel = new Label("Moves: --");
-        movesLabel.setFont(Font.font("Arial", FontWeight.BOLD, 14));
-        movesLabel.setTextFill(color);
-        statsBox.getChildren().addAll(timeLabel, movesLabel);
+        
+        statsBox.getChildren().addAll(statusLabel, timeLabel);
 
         board.getChildren().addAll(nameLabel, gridContainer, statsBox);
         return board;
@@ -602,10 +635,10 @@ public class FlipGameAllInOne extends Application {
                     SolverResult dpResult = futures.get(3).get();
                     
                     javafx.application.Platform.runLater(() -> {
-                        graphTimeLabel.setText("Time: " + graphResult.timeMs + " ms  •  Moves: " + graphResult.moveCount);
-                        divideTimeLabel.setText("Time: " + divideResult.timeMs + " ms  •  Moves: " + divideResult.moveCount);
-                        backtrackTimeLabel.setText("Time: " + backtrackResult.timeMs + " ms  •  Moves: " + backtrackResult.moveCount);
-                        dpTimeLabel.setText("Time: " + dpResult.timeMs + " ms  •  Moves: " + dpResult.moveCount);
+                        updateResultDisplay(graphResult, graphStatusLabel, graphTimeLabel, GRAPH_COLOR);
+                        updateResultDisplay(divideResult, divideStatusLabel, divideTimeLabel, DIVIDE_COLOR);
+                        updateResultDisplay(backtrackResult, backtrackStatusLabel, backtrackTimeLabel, BACKTRACK_COLOR);
+                        updateResultDisplay(dpResult, dpStatusLabel, dpTimeLabel, DP_COLOR);
                         
                         animateAllSolutions(graphResult, divideResult, backtrackResult, dpResult, board);
                     });
@@ -619,6 +652,28 @@ public class FlipGameAllInOne extends Application {
             e.printStackTrace();
         } finally {
             executor.shutdown();
+        }
+    }
+    
+    private void updateResultDisplay(SolverResult result, Label statusLabel, Label timeLabel, Color color) {
+        statusLabel.setText(result.statusMessage);
+        
+        if (result.timeout) {
+            statusLabel.setTextFill(TIMEOUT_COLOR);
+            if (result.partial) {
+                timeLabel.setText("Partial: " + result.moveCount + " moves in " + result.timeMs + " ms");
+            } else {
+                timeLabel.setText("Timeout - no solution found");
+            }
+            timeLabel.setTextFill(TIMEOUT_COLOR);
+        } else if (!result.solvable) {
+            statusLabel.setTextFill(DANGER_COLOR);
+            timeLabel.setText("No solution found");
+            timeLabel.setTextFill(DANGER_COLOR);
+        } else {
+            statusLabel.setTextFill(SUCCESS_COLOR);
+            timeLabel.setText("Time: " + result.timeMs + " ms  •  Moves: " + result.moveCount);
+            timeLabel.setTextFill(color);
         }
     }
 
@@ -938,12 +993,19 @@ public class FlipGameAllInOne extends Application {
     private SolverResult solveBacktracking(int[][] board) {
         long start = System.currentTimeMillis();
         BacktrackSolver solver = new BacktrackSolver(board);
-        List<int[]> moves = solver.solveWithTimeout(10000);
+        List<int[]> moves = solver.solveWithTimeout(5000); // 5 second timeout
         long time = System.currentTimeMillis() - start;
         
         if (moves == null) {
-            SolverResult graphResult = solveGraphGreedy(board);
-            return new SolverResult("Backtracking (10s)", graphResult.moves, time, toHex(BACKTRACK_COLOR));
+            // Timeout occurred - check if we have any partial solution
+            if (solver.bestClicks != null && solver.bestCost < Integer.MAX_VALUE) {
+                // We found some solutions before timeout
+                List<int[]> partialMoves = extractMoves(solver.bestClicks);
+                return new SolverResult("Backtracking (PARTIAL)", partialMoves, time, toHex(BACKTRACK_COLOR), true, true);
+            } else {
+                // No solution found at all
+                return new SolverResult("Backtracking", null, time, toHex(BACKTRACK_COLOR), true, false);
+            }
         }
         
         return new SolverResult("Backtracking", moves, time, toHex(BACKTRACK_COLOR));
@@ -963,18 +1025,33 @@ public class FlipGameAllInOne extends Application {
         Queue<Long> queue = new LinkedList<>();
         Map<Long, Long> parent = new HashMap<>(); // current -> previous state
         Map<Long, Integer> move = new HashMap<>(); // current -> move index that led to it
+        Map<Long, Integer> moveCount = new HashMap<>(); // track number of moves to each state
 
         queue.add(startState);
         parent.put(startState, -1L);
         move.put(startState, -1);
+        moveCount.put(startState, 0);
 
         long deadline = System.currentTimeMillis() + 5000; // 5 seconds timeout
         int maxStates = 1_000_000; // limit to 1 million states
         int statesVisited = 0;
+        
+        // Track best partial solution
+        long bestPartialState = startState;
+        int bestPartialMoves = 0;
+        int bestWhiteCount = countWhite(board);
 
         while (!queue.isEmpty() && System.currentTimeMillis() < deadline && statesVisited < maxStates) {
             long current = queue.poll();
             statesVisited++;
+
+            // Check if this state has more white tiles than our best partial
+            int whiteCount = Long.bitCount(current);
+            if (whiteCount > bestWhiteCount) {
+                bestWhiteCount = whiteCount;
+                bestPartialState = current;
+                bestPartialMoves = moveCount.get(current);
+            }
 
             if (current == goal) {
                 // Reconstruct path
@@ -997,15 +1074,48 @@ public class FlipGameAllInOne extends Application {
                 if (!parent.containsKey(next)) {
                     parent.put(next, current);
                     move.put(next, i);
+                    moveCount.put(next, moveCount.get(current) + 1);
                     queue.add(next);
                 }
             }
         }
 
-        // Timeout or too many states – fallback to graph+greedy
+        // Timeout or too many states – return best partial solution found
         long time = System.currentTimeMillis() - startTime;
-        SolverResult fallback = solveGraphGreedy(board);
-        return new SolverResult("DP (fallback)", fallback.moves, time, toHex(DP_COLOR));
+        
+        if (bestPartialState != startState) {
+            // We found some progress - reconstruct partial path
+            List<int[]> partialMoves = new ArrayList<>();
+            long state = bestPartialState;
+            Stack<int[]> reverseMoves = new Stack<>();
+            
+            while (state != startState) {
+                int m = move.get(state);
+                int r = m / N;
+                int c = m % N;
+                reverseMoves.push(new int[]{r, c});
+                state = parent.get(state);
+            }
+            
+            while (!reverseMoves.isEmpty()) {
+                partialMoves.add(reverseMoves.pop());
+            }
+            
+            return new SolverResult("Dynamic Programming (PARTIAL)", partialMoves, time, toHex(DP_COLOR), true, true);
+        } else {
+            // No progress made
+            return new SolverResult("Dynamic Programming", null, time, toHex(DP_COLOR), true, false);
+        }
+    }
+    
+    private static int countWhite(int[][] board) {
+        int count = 0;
+        for (int[] row : board) {
+            for (int val : row) {
+                if (val == 1) count++;
+            }
+        }
+        return count;
     }
 
     private static long boardToLong(int[][] board) {
@@ -1045,7 +1155,15 @@ public class FlipGameAllInOne extends Application {
             
             backtrack(g, clicks, 0, 0);
             
-            if (timeoutReached || bestClicks == null) return null;
+            if (timeoutReached) {
+                // Return best solution found so far (if any)
+                if (bestClicks != null) {
+                    return extractMoves(bestClicks);
+                }
+                return null;
+            }
+            
+            if (bestClicks == null) return null;
             return extractMoves(bestClicks);
         }
         
