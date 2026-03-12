@@ -1,0 +1,153 @@
+package pck;
+import java.util.*;
+
+public class FlipGameBacktracking {
+
+    static int rows = 3;
+    static int cols = 3;
+    static int N = rows * cols;
+
+    static int[] flipMask = new int[N];
+    static Map<Integer, Integer> dp = new HashMap<>();
+
+    static int overlapCount = 0;
+
+    static int goalState = 0;
+
+    public static void main(String[] args) {
+
+        int[][] board = {
+                {0,0,1},
+                {0,0,0},
+                {1,1,0}
+        };
+
+        int startState = boardToState(board);
+
+        precomputeFlipMasks();
+
+        bfsSolve(startState);
+    }
+
+    static int boardToState(int[][] board) {
+
+        int state = 0;
+        int bit = 0;
+
+        for(int i=0;i<rows;i++)
+        {
+            for(int j=0;j<cols;j++)
+            {
+                if(board[i][j]==1)
+                    state |= (1 << bit);
+
+                bit++;
+            }
+        }
+
+        return state;
+    }
+
+    static void precomputeFlipMasks() {
+
+        for(int i=0;i<rows;i++)
+        {
+            for(int j=0;j<cols;j++)
+            {
+                int index = i*cols + j;
+
+                int mask = 0;
+
+                int[][] dirs = {
+                        {0,0},{-1,0},{1,0},{0,-1},{0,1}
+                };
+
+                for(int[] d : dirs)
+                {
+                    int ni = i + d[0];
+                    int nj = j + d[1];
+
+                    if(ni>=0 && ni<rows && nj>=0 && nj<cols)
+                    {
+                        int pos = ni*cols + nj;
+                        mask ^= (1 << pos);
+                    }
+                }
+
+                flipMask[index] = mask;
+            }
+        }
+    }
+
+    static void bfsSolve(int startState) {
+
+        Queue<Integer> q = new LinkedList<>();
+
+        q.add(startState);
+
+        dp.put(startState,0);
+
+        System.out.println("Initial State: " + stateToBinary(startState));
+        System.out.println("--------------------------------------");
+
+        while(!q.isEmpty())
+        {
+            int current = q.poll();
+
+            int depth = dp.get(current);
+
+            System.out.println("\nExploring State: " + stateToBinary(current));
+            System.out.println("Depth (flips so far): " + depth);
+
+            if(current == goalState)
+            {
+                System.out.println("\nGOAL reached!");
+                System.out.println("Minimum flips: " + depth);
+                System.out.println("Total overlaps detected: " + overlapCount);
+                return;
+            }
+
+            for(int move=0; move<N; move++)
+            {
+                int nextState = current ^ flipMask[move];
+
+                System.out.println("\nTrying move: flip cell " + move);
+                System.out.println("Generated state: " + stateToBinary(nextState));
+
+                if(dp.containsKey(nextState))
+                {
+                    System.out.println("Rejected (OVERLAP detected)");
+                    overlapCount++;
+                }
+                else
+                {
+                    System.out.println("Accepted -> new state added to DP");
+
+                    dp.put(nextState, depth+1);
+
+                    q.add(nextState);
+
+                    System.out.println("DP size now: " + dp.size());
+                }
+            }
+        }
+
+        System.out.println("\nNo solution found.");
+        System.out.println("Total overlaps detected: " + overlapCount);
+    }
+
+    static String stateToBinary(int state) {
+
+        StringBuilder s = new StringBuilder();
+
+        for(int i=0;i<N;i++)
+        {
+            if((state & (1<<i)) != 0)
+                s.append("1");
+            else
+                s.append("0");
+        }
+
+        return s.toString();
+    }
+}
